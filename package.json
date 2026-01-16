@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "dev:api": "npm --prefix api run dev"
+  }
+}
+
