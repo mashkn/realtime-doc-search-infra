@@ -1,0 +1,24 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Env
+.env
+.env.local
+
+# Coverage / tests
+coverage/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Docker
+*.pid
+
+# Misc
+*.log
