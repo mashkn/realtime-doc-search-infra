@@ -7,3 +7,19 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
+      - DATABASE_URL=postgresql://app:app@db:5432/appdb
+    depends_on:
+      - db
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD=app
+      - POSTGRES_DB=appdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
