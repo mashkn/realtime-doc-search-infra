@@ -19,6 +19,22 @@ app.get("/db-health", async (_req, res) => {
   }
 });
 
+app.get("/documents", async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, title, body, created_at, updated_at
+      FROM documents
+      ORDER BY created_at DESC
+      `
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    return res.status(500).json({ error: "failed to fetch documents" });
+  }
+});
+
 app.get("/documents/:id", async (req, res) => {
   const { id } = req.params;
 
