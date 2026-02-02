@@ -1,6 +1,8 @@
 import express from "express";
 import { pool } from "./db";
+import { insertOutboxEvent } from "./outbox";
 import { v4 as uuidv4 } from "uuid";
+
 
 
 const app = express();
@@ -68,10 +70,13 @@ app.post("/documents", async (req, res) => {
     return res.status(400).json({ error: "body is required" });
   }
 
-  const id = uuidv4();
-
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    const id = uuidv4();
+
+    const docResult = await client.query(
       `
       INSERT INTO documents (id, title, body)
       VALUES ($1, $2, $3)
@@ -80,11 +85,20 @@ app.post("/documents", async (req, res) => {
       [id, title, body]
     );
 
-    return res.status(201).json(result.rows[0]);
+    const row = docResult.rows[0];
+
+    // outbox insert happens here…
+
+    await client.query("COMMIT");
+    return res.status(201).json(row);
   } catch (err) {
+    await client.query("ROLLBACK");
     return res.status(500).json({ error: "failed to create document" });
+  } finally {
+    client.release();
   }
 });
+
 
 
 
