@@ -87,14 +87,30 @@ app.post("/documents", async (req, res) => {
 
     const row = docResult.rows[0];
 
-    // outbox insert happens here…
+    const eventId = uuidv4();
+    const payload = {
+      type: "document.upserted",
+      data: {
+        document_id: row.id,
+        title: row.title,
+        body: row.body,
+        updated_at: row.updated_at
+      }
+    };
+
+    await insertOutboxEvent(client, {
+      id: eventId,
+      event_type: "document.upserted",
+      payload
+    });
 
     await client.query("COMMIT");
     return res.status(201).json(row);
   } catch (err) {
-    await client.query("ROLLBACK");
-    return res.status(500).json({ error: "failed to create document" });
-  } finally {
+  console.error("create document failed", err);
+  await client.query("ROLLBACK");
+  return res.status(500).json({ error: "failed to create document" });
+} finally {
     client.release();
   }
 });
