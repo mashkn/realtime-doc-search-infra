@@ -2,6 +2,7 @@ import express from "express";
 import { pool } from "./db";
 import { insertOutboxEvent } from "./outbox";
 import { v4 as uuidv4 } from "uuid";
+import { publishOutboxBatch } from "./publisher";
 
 
 
@@ -86,22 +87,21 @@ app.post("/documents", async (req, res) => {
     );
 
     const row = docResult.rows[0];
-
     const outboxId = uuidv4();
-    const eventId = uuidv4();
+    
     const payload = {
       type: "document.upserted.v1",
       meta: {
-        event_id: eventId,
-        occurred_at: new Date().toISOString(),
+        event_id: uuidv4(),
         producer: "api",
+        occurred_at: new Date().toISOString(),
         schema_version: 1
       },
       data: {
         document_id: row.id,
         title: row.title,
         body: row.body,
-        updated_at: row.updated_at.toISOString()
+        updated_at: row.updated_at
       }
     };
 
@@ -122,8 +122,22 @@ app.post("/documents", async (req, res) => {
   }
 });
 
+app.post("/outbox/publish-once", async (req, res) => {
+  const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
 
-
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await publishOutboxBatch(client, Number.isFinite(limit) ? limit : 10);
+    await client.query("COMMIT");
+    return res.json(result);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    return res.status(500).json({ error: "failed to publish outbox batch" });
+  } finally {
+    client.release();
+  }
+});
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(port, () => console.log(`API running on http://localhost:${port}`));
