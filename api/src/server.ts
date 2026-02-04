@@ -87,30 +87,37 @@ app.post("/documents", async (req, res) => {
 
     const row = docResult.rows[0];
 
+    const outboxId = uuidv4();
     const eventId = uuidv4();
     const payload = {
-      type: "document.upserted",
+      type: "document.upserted.v1",
+      meta: {
+        event_id: eventId,
+        occurred_at: new Date().toISOString(),
+        producer: "api",
+        schema_version: 1
+      },
       data: {
         document_id: row.id,
         title: row.title,
         body: row.body,
-        updated_at: row.updated_at
+        updated_at: row.updated_at.toISOString()
       }
     };
 
     await insertOutboxEvent(client, {
-      id: eventId,
-      event_type: "document.upserted",
+      id: outboxId,
+      event_type: "document.upserted.v1",
       payload
     });
 
     await client.query("COMMIT");
     return res.status(201).json(row);
   } catch (err) {
-  console.error("create document failed", err);
-  await client.query("ROLLBACK");
-  return res.status(500).json({ error: "failed to create document" });
-} finally {
+    console.error("create document failed", err);
+    await client.query("ROLLBACK");
+    return res.status(500).json({ error: "failed to create document" });
+  } finally {
     client.release();
   }
 });

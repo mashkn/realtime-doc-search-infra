@@ -2,7 +2,7 @@ import { z } from "zod";
 import { EventMeta } from "./base";
 
 export const DocumentUpsertedV1 = z.object({
-  type: z.literal("document.upserted"),
+  type: z.literal("document.upserted.v1"),
   meta: EventMeta.extend({
     schema_version: z.literal(1)
   }),
