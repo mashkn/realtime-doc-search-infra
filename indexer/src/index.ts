@@ -23,19 +23,26 @@ async function processOnce(limit = 10) {
       SELECT id, event_type, payload
       FROM outbox_events
       WHERE published_at IS NOT NULL
+      AND indexed_at IS NULL
       ORDER BY published_at ASC
       LIMIT $1
       FOR UPDATE SKIP LOCKED
+
       `,
       [limit]
     );
 
     for (const r of rows) {
-      if (r.event_type !== "document.upserted.v1") continue;
+      if (r.event_type !== "document.upserted.v1") {
+    await client.query(`UPDATE outbox_events SET indexed_at = now() WHERE id = $1`, [r.id]);
+    continue;
+  }
 
-      const data = r.payload?.data;
-      if (!data?.document_id) continue;
-
+  const data = r.payload?.data;
+  if (!data?.document_id) {
+    await client.query(`UPDATE outbox_events SET indexed_at = now() WHERE id = $1`, [r.id]);
+    continue;
+  }
       await client.query(
         `
         INSERT INTO search_documents (document_id, title, body, updated_at)
@@ -54,7 +61,7 @@ async function processOnce(limit = 10) {
       await client.query(
         `
         UPDATE outbox_events
-        SET payload = jsonb_set(payload, '{meta,indexed_by_indexer}', 'true'::jsonb, true)
+        SET indexed_at = now()
         WHERE id = $1
         `,
         [r.id]
