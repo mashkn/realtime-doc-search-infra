@@ -23,5 +23,13 @@ services:
     depends_on:
       - db
 
+  indexer:
+    build:
+      context: ./indexer
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/docsearch
+    depends_on:
+      - db
+
 volumes:
   pgdata:
