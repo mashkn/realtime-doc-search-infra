@@ -181,5 +181,28 @@ app.post("/outbox/publish-once", async (req, res) => {
   }
 });
 
+// Not Found Response Handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: "not_found",
+    message: `Route ${req.method} ${req.path} does not exist`
+  });
+});
+
+// Global Error Handler
+app.use((
+  err: unknown,
+  _req: express.Request,
+  res: express.Response,
+  _next: express.NextFunction
+) => {
+  console.error("Unhandled error:", err);
+
+  res.status(500).json({
+    error: "internal_server_error",
+    message: "An unexpected error occurred"
+  });
+});
+
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(port, () => console.log(`API running on http://localhost:${port}`));
