@@ -1,2 +1,9 @@
 #!/usr/bin/env sh
+npm run lint:fix
+
+if ! git diff --quiet; then
+  echo "Lint fixes were applied. Stage changes and re-run commit."
+  exit 1
+fi
+
 npm run lint

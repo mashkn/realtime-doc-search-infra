@@ -2,6 +2,7 @@
   "scripts": {
     "dev:api": "npm --prefix api run dev",
     "lint": "eslint \"{api,indexer,shared}/src/**/*.ts\"",
+    "lint:fix": "eslint \"{api,indexer,shared}/src/**/*.ts\" --fix",
     "typecheck": "npm --prefix api run typecheck && npm --prefix indexer run typecheck && npm --prefix shared run typecheck",
     "prepare": "husky"
   },
