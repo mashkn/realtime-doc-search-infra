@@ -7,7 +7,7 @@ on:
       - main
 
 jobs:
-  setup:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,16 +36,37 @@ jobs:
       - name: Install shared dependencies
         run: npm ci --prefix shared
 
-  typecheck:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - name: Typecheck
-        run: npm run typecheck
-
-  lint:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
       - name: Lint
         run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            api/package-lock.json
+            indexer/package-lock.json
+            shared/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install api dependencies
+        run: npm ci --prefix api
+
+      - name: Install indexer dependencies
+        run: npm ci --prefix indexer
+
+      - name: Install shared dependencies
+        run: npm ci --prefix shared
+
+      - name: Typecheck
+        run: npm run typecheck
