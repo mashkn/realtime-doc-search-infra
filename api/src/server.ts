@@ -72,6 +72,36 @@ app.get("/documents/:id", async (req, res) => {
   }
 });
 
+app.get("/search", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+
+  if(!q) {
+    return res.status(400).json({ error: "query parameter 'q' is required" });
+  }
+
+  try {
+    // Simple search: case-insensitive substring match on title or body
+    const result = await pool.query(
+      `
+      SELECT document_id, title, body, updated_at, indexed_at
+      FROM search_documents
+      WHERE title ILIKE '%' || $1 || '%'
+          OR body ILIKE '%' || $1 || '%'
+      ORDER BY updated_at DESC
+      LIMIT $2
+      `,
+      [q, limit]
+    );
+    return res.json({ query: q, count: result.rowCount ?? 0, results: result.rows });
+  } catch (err) {
+    console.error("failed to search documents", err);
+    return res.status(500).json(errorResponse("failed to search documents", err));
+  }
+
+});
+
 app.post("/documents", async (req, res) => {
   const { title, body } = req.body ?? {};
 
