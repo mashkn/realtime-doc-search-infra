@@ -9,6 +9,14 @@ import { publishOutboxBatch } from "./publisher";
 const app = express();
 app.use(express.json());
 
+const isProduction = process.env.NODE_ENV === "production";
+
+const errorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+const errorResponse = (error: string, err: unknown): { error: string; message?: string } =>
+  isProduction ? { error } : { error, message: errorMessage(err) };
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -18,7 +26,8 @@ app.get("/db-health", async (_req, res) => {
     const result = await pool.query("SELECT 1 as ok");
     res.json({ db: "ok", result: result.rows[0] });
   } catch (err) {
-    res.status(500).json({ db: "error" });
+    console.error("db health check failed", err);
+    res.status(500).json({ db: "error", ...errorResponse("db health check failed", err) });
   }
 });
 
@@ -34,7 +43,8 @@ app.get("/documents", async (_req, res) => {
 
     return res.json(result.rows);
   } catch (err) {
-    return res.status(500).json({ error: "failed to fetch documents" });
+    console.error("failed to fetch documents", err);
+    return res.status(500).json(errorResponse("failed to fetch documents", err));
   }
 });
 
@@ -57,7 +67,8 @@ app.get("/documents/:id", async (req, res) => {
 
     return res.json(result.rows[0]);
   } catch (err) {
-    return res.status(500).json({ error: "failed to fetch document" });
+    console.error("failed to fetch document", err);
+    return res.status(500).json(errorResponse("failed to fetch document", err));
   }
 });
 
@@ -116,7 +127,7 @@ app.post("/documents", async (req, res) => {
   } catch (err) {
     console.error("create document failed", err);
     await client.query("ROLLBACK");
-    return res.status(500).json({ error: "failed to create document" });
+    return res.status(500).json(errorResponse("failed to create document", err));
   } finally {
     client.release();
   }
@@ -132,8 +143,9 @@ app.post("/outbox/publish-once", async (req, res) => {
     await client.query("COMMIT");
     return res.json(result);
   } catch (err) {
+    console.error("failed to publish outbox batch", err);
     await client.query("ROLLBACK");
-    return res.status(500).json({ error: "failed to publish outbox batch" });
+    return res.status(500).json(errorResponse("failed to publish outbox batch", err));
   } finally {
     client.release();
   }
