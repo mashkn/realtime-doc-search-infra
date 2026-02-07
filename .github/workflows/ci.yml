@@ -7,9 +7,8 @@ on:
       - main
 
 jobs:
-  test:
+  setup:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,8 +36,16 @@ jobs:
       - name: Install shared dependencies
         run: npm ci --prefix shared
 
+  typecheck:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
       - name: Typecheck
         run: npm run typecheck
 
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
       - name: Lint
         run: npm run lint
