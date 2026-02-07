@@ -22,3 +22,4 @@ coverage/
 
 # Misc
 *.log
+.husky/_
