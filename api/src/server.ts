@@ -77,23 +77,23 @@ app.get("/search", async (req, res) => {
   const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
 
-  if(!q) {
+  if (!q) {
     return res.status(400).json({ error: "query parameter 'q' is required" });
   }
 
   try {
-    // Simple search: case-insensitive substring match on title or body
     const result = await pool.query(
       `
-      SELECT document_id, title, body, updated_at, indexed_at
-      FROM search_documents
-      WHERE title ILIKE '%' || $1 || '%'
-          OR body ILIKE '%' || $1 || '%'
-      ORDER BY updated_at DESC
-      LIMIT $2
-      `,
+  SELECT document_id, title, body, updated_at, indexed_at,
+         ts_rank(search_tsv, websearch_to_tsquery('english', $1)) AS rank
+  FROM search_documents
+  WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+  ORDER BY rank DESC, updated_at DESC
+  LIMIT $2
+  `,
       [q, limit]
     );
+
     return res.json({ query: q, count: result.rowCount ?? 0, results: result.rows });
   } catch (err) {
     console.error("failed to search documents", err);
@@ -129,7 +129,7 @@ app.post("/documents", async (req, res) => {
 
     const row = docResult.rows[0];
     const outboxId = uuidv4();
-    
+
     const payload = {
       type: "document.upserted.v1",
       meta: {
