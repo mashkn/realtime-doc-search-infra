@@ -84,13 +84,19 @@ app.get("/search", async (req, res) => {
   try {
     const result = await pool.query(
       `
-  SELECT document_id, title, body, updated_at, indexed_at,
-         ts_rank(search_tsv, websearch_to_tsquery('english', $1)) AS rank
-  FROM search_documents
-  WHERE search_tsv @@ websearch_to_tsquery('english', $1)
-  ORDER BY rank DESC, updated_at DESC
-  LIMIT $2
-  `,
+      SELECT 
+        document_id, 
+        title, 
+        body, 
+        updated_at, 
+        indexed_at,
+        ts_rank(search_tsv, websearch_to_tsquery('english', $1)) AS rank, 
+        ts_headline('english', body, websearch_to_tsquery('english', $1)) AS snippet
+      FROM search_documents
+      WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+      ORDER BY rank DESC, updated_at DESC
+      LIMIT $2
+      `,
       [q, limit]
     );
 
