@@ -83,6 +83,16 @@ app.get("/search", async (req, res) => {
   if (!q) {
     return res.status(400).json({ error: "query parameter 'q' is required" });
   }
+  const totalResult = await pool.query(
+    `
+    SELECT COUNT(*)::int AS total
+    FROM search_documents
+    WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+    `,
+    [q]
+  );
+
+  const total = totalResult.rows[0]?.total ?? 0;
 
   try {
     const result = await pool.query(
@@ -111,11 +121,13 @@ app.get("/search", async (req, res) => {
 
     return res.json({
       query: q,
+      total,
       limit,
       offset,
       count: result.rowCount ?? 0,
       results: result.rows
     });
+    
   } catch (err) {
     console.error("failed to search documents", err);
     return res.status(500).json(errorResponse("failed to search documents", err));
