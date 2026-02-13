@@ -76,31 +76,58 @@ app.get("/search", async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 10;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+  // Add offset parsing
+  const offsetRaw = typeof req.query.offset === "string" ? Number(req.query.offset) : 0;
+  const offset = Number.isFinite(offsetRaw) ? Math.min(Math.max(offsetRaw, 0), 1000) : 0;
 
   if (!q) {
     return res.status(400).json({ error: "query parameter 'q' is required" });
   }
+  const totalResult = await pool.query(
+    `
+    SELECT COUNT(*)::int AS total
+    FROM search_documents
+    WHERE search_tsv @@ websearch_to_tsquery('english', $1)
+    `,
+    [q]
+  );
+
+  const total = totalResult.rows[0]?.total ?? 0;
 
   try {
     const result = await pool.query(
       `
-      SELECT 
-        document_id, 
-        title, 
-        body, 
-        updated_at, 
+      SELECT
+        document_id,
+        title,
+        body,
+        updated_at,
         indexed_at,
-        ts_rank(search_tsv, websearch_to_tsquery('english', $1)) AS rank, 
-        ts_headline('english', body, websearch_to_tsquery('english', $1)) AS snippet
+        ts_rank(search_tsv, websearch_to_tsquery('english', $1)) AS rank,
+        ts_headline(
+          'english',
+          body,
+          websearch_to_tsquery('english', $1),
+          'MaxWords=30, MinWords=10, ShortWord=3, HighlightAll=true'
+        ) AS snippet
       FROM search_documents
       WHERE search_tsv @@ websearch_to_tsquery('english', $1)
-      ORDER BY rank DESC, updated_at DESC
+      ORDER BY rank DESC, updated_at DESC, document_id DESC
       LIMIT $2
+      OFFSET $3
       `,
-      [q, limit]
+      [q, limit, offset]
     );
 
-    return res.json({ query: q, count: result.rowCount ?? 0, results: result.rows });
+    return res.json({
+      query: q,
+      total,
+      limit,
+      offset,
+      count: result.rowCount ?? 0,
+      results: result.rows
+    });
+    
   } catch (err) {
     console.error("failed to search documents", err);
     return res.status(500).json(errorResponse("failed to search documents", err));
