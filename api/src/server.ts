@@ -1,4 +1,5 @@
-import express, { response } from "express";
+import express from "express";
+import crypto from "crypto";
 import { pool } from "./db";
 import { insertOutboxEvent } from "./outbox";
 import { v4 as uuidv4 } from "uuid";
@@ -8,6 +9,40 @@ import { publishOutboxBatch } from "./publisher";
 
 const app = express();
 app.use(express.json());
+
+// Middleware to assign a unique request ID for tracing
+app.use((req, res, next) => {
+  const requestId = req.header("x-request-id") ?? crypto.randomUUID();
+  (req as any).requestId = requestId;
+  res.setHeader("x-request-id", requestId);
+  next();
+});
+
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const end = process.hrtime.bigint();
+    const ms = Number(end - start) / 1_000_000;
+
+    const requestId = (req as any).requestId;
+
+    // Structured log (JSON line)
+    console.log(
+      JSON.stringify({
+        level: "info",
+        msg: "request",
+        requestId,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Math.round(ms * 100) / 100
+      })
+    );
+  });
+
+  next();
+});
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -26,7 +61,8 @@ app.get("/db-health", async (_req, res) => {
     const result = await pool.query("SELECT 1 as ok");
     res.json({ db: "ok", result: result.rows[0] });
   } catch (err) {
-    console.error("db health check failed", err);
+    const requestId = (_req as any).requestId;
+    console.error(JSON.stringify({ level: "error", msg: "db_health_check_failed", requestId, error: String(err) }));
     res.status(500).json({ db: "error", ...errorResponse("db health check failed", err) });
   }
 });
@@ -43,7 +79,8 @@ app.get("/documents", async (_req, res) => {
 
     return res.json(result.rows);
   } catch (err) {
-    console.error("failed to fetch documents", err);
+    const requestId = (_req as any).requestId;
+    console.error(JSON.stringify({ level: "error", msg: "documents_fetch_failed", requestId, error: String(err) }));
     return res.status(500).json(errorResponse("failed to fetch documents", err));
   }
 });
@@ -67,7 +104,8 @@ app.get("/documents/:id", async (req, res) => {
 
     return res.json(result.rows[0]);
   } catch (err) {
-    console.error("failed to fetch document", err);
+    const requestId = (req as any).requestId;
+    console.error(JSON.stringify({ level: "error", msg: "documents_fetch_failed", requestId, error: String(err) }));
     return res.status(500).json(errorResponse("failed to fetch document", err));
   }
 });
@@ -95,6 +133,10 @@ app.get("/search", async (req, res) => {
   const total = totalResult.rows[0]?.total ?? 0;
 
   try {
+  
+    // Time the full search operation for logging purposes
+    const t0 = Date.now();
+
     const result = await pool.query(
       `
       SELECT
@@ -149,6 +191,24 @@ app.get("/search", async (req, res) => {
 
     const responseTotal = mode === "fts" ? total : null;
 
+    // Log the search query and results in a structured format
+    const t1 = Date.now();
+
+    console.log(
+      JSON.stringify({
+        level: "info",
+        msg: "search",
+        requestId: (req as any).requestId,
+        q,
+        mode,
+        limit,
+        offset,
+        total: responseTotal,
+        results: rows.length,
+        durationMs: t1 - t0
+      })
+    );
+
     return res.json({
       query: q,
       mode,
@@ -160,10 +220,14 @@ app.get("/search", async (req, res) => {
     });
 
   } catch (err) {
-    console.error("failed to search documents", err);
-    return res.status(500).json(errorResponse("failed to search documents", err));
-  }
-
+    const requestId = (req as any).requestId;
+    console.error("failed to search documents", { requestId, err });
+    return res.status(500).json({
+      error: "failed to search documents",
+      message: err instanceof Error ? err.message : String(err),
+      requestId
+    });
+  };
 });
 
 app.post("/documents", async (req, res) => {
@@ -219,7 +283,8 @@ app.post("/documents", async (req, res) => {
     await client.query("COMMIT");
     return res.status(201).json(row);
   } catch (err) {
-    console.error("create document failed", err);
+    const requestId = (req as any).requestId;
+    console.error(JSON.stringify({ level: "error", msg: "documents_create_failed", requestId, error: String(err) }));
     await client.query("ROLLBACK");
     return res.status(500).json(errorResponse("failed to create document", err));
   } finally {
@@ -237,13 +302,15 @@ app.post("/outbox/publish-once", async (req, res) => {
     await client.query("COMMIT");
     return res.json(result);
   } catch (err) {
-    console.error("failed to publish outbox batch", err);
+    const requestId = (req as any).requestId;
+    console.error(JSON.stringify({ level: "error", msg: "outbox_publish_failed", requestId, error: String(err) }));
     await client.query("ROLLBACK");
     return res.status(500).json(errorResponse("failed to publish outbox batch", err));
   } finally {
     client.release();
   }
 });
+
 
 // Not Found Response Handler
 app.use((req, res) => {
@@ -255,18 +322,31 @@ app.use((req, res) => {
 
 // Global Error Handler
 app.use((
-  err: unknown,
-  _req: express.Request,
-  res: express.Response,
-  _next: express.NextFunction
-) => {
-  console.error("Unhandled error:", err);
+    err: unknown,
+    req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    const requestId = (req as any).requestId;
 
-  res.status(500).json({
-    error: "internal_server_error",
-    message: "An unexpected error occurred"
+    console.error(
+      JSON.stringify({
+        level: "error",
+        msg: "unhandled_error",
+        requestId,
+        path: req.path,
+        method: req.method,
+        // keep it simple; don’t over-serialize unknown objects
+        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : String(err)
+      })
+    );
+
+    res.status(500).json({
+      error: "internal_server_error",
+      message: "An unexpected error occurred",
+      requestId
+    });
   });
-});
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(port, () => console.log(`API running on http://localhost:${port}`));
