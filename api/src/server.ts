@@ -133,11 +133,10 @@ app.get("/search", async (req, res) => {
           body,
           updated_at,
           indexed_at,
-          similarity(title, $1) AS title_sim,
-          similarity(body,  $1) AS body_sim
+          similarity(title, $1) AS title_sim
         FROM search_documents
-        WHERE title % $1 OR body % $1
-        ORDER BY GREATEST(similarity(title, $1), similarity(body, $1)) DESC,
+        WHERE similarity(title, $1) > 0.2
+        ORDER BY similarity(title, $1) DESC,
                 updated_at DESC,
                 document_id DESC
         LIMIT $2
@@ -145,10 +144,9 @@ app.get("/search", async (req, res) => {
         `,
         [q, limit, offset]
       );
-
       rows = trgm.rows;
     }
-    
+
     const responseTotal = mode === "fts" ? total : null;
 
     return res.json({
@@ -157,8 +155,8 @@ app.get("/search", async (req, res) => {
       total: responseTotal,
       limit,
       offset,
-      count: result.rowCount ?? 0,
-      results: result.rows
+      count: rows.length,
+      results: rows
     });
 
   } catch (err) {
