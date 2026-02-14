@@ -1,4 +1,5 @@
-import express, { response } from "express";
+import express from "express";
+import crypto from "crypto";
 import { pool } from "./db";
 import { insertOutboxEvent } from "./outbox";
 import { v4 as uuidv4 } from "uuid";
@@ -95,6 +96,10 @@ app.get("/search", async (req, res) => {
   const total = totalResult.rows[0]?.total ?? 0;
 
   try {
+  
+    // Time the full search operation for logging purposes
+    const t0 = Date.now();
+
     const result = await pool.query(
       `
       SELECT
@@ -148,6 +153,24 @@ app.get("/search", async (req, res) => {
     }
 
     const responseTotal = mode === "fts" ? total : null;
+
+    // Log the search query and results in a structured format
+    const t1 = Date.now();
+
+    console.log(
+      JSON.stringify({
+        level: "info",
+        msg: "search",
+        requestId: (req as any).requestId,
+        q,
+        mode,
+        limit,
+        offset,
+        total: responseTotal,
+        results: rows.length,
+        durationMs: t1 - t0
+      })
+    );
 
     return res.json({
       query: q,
@@ -243,6 +266,39 @@ app.post("/outbox/publish-once", async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+// Middleware to assign a unique request ID for tracing
+app.use((req, res, next) => {
+  const requestId = req.header("x-request-id") ?? crypto.randomUUID();
+  (req as any).requestId = requestId;
+  res.setHeader("x-request-id", requestId);
+  next();
+});
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const end = process.hrtime.bigint();
+    const ms = Number(end - start) / 1_000_000;
+
+    const requestId = (req as any).requestId;
+
+    // Structured log (JSON line)
+    console.log(
+      JSON.stringify({
+        level: "info",
+        msg: "request",
+        requestId,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: Math.round(ms * 100) / 100
+      })
+    );
+  });
+
+  next();
 });
 
 // Not Found Response Handler
