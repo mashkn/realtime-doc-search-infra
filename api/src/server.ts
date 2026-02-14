@@ -1,4 +1,4 @@
-import express from "express";
+import express, { response } from "express";
 import { pool } from "./db";
 import { insertOutboxEvent } from "./outbox";
 import { v4 as uuidv4 } from "uuid";
@@ -119,15 +119,48 @@ app.get("/search", async (req, res) => {
       [q, limit, offset]
     );
 
+    let mode: "fts" | "trgm" = "fts";
+    let rows = result.rows;
+
+    if (rows.length === 0) {
+      mode = "trgm";
+
+      const trgm = await pool.query(
+        `
+        SELECT
+          document_id,
+          title,
+          body,
+          updated_at,
+          indexed_at,
+          similarity(title, $1) AS title_sim,
+          similarity(body,  $1) AS body_sim
+        FROM search_documents
+        WHERE title % $1 OR body % $1
+        ORDER BY GREATEST(similarity(title, $1), similarity(body, $1)) DESC,
+                updated_at DESC,
+                document_id DESC
+        LIMIT $2
+        OFFSET $3
+        `,
+        [q, limit, offset]
+      );
+
+      rows = trgm.rows;
+    }
+    
+    const responseTotal = mode === "fts" ? total : null;
+
     return res.json({
       query: q,
-      total,
+      mode,
+      total: responseTotal,
       limit,
       offset,
       count: result.rowCount ?? 0,
       results: result.rows
     });
-    
+
   } catch (err) {
     console.error("failed to search documents", err);
     return res.status(500).json(errorResponse("failed to search documents", err));
