@@ -115,3 +115,49 @@ Search querying is implemented next.
 * Event types are versioned to support schema evolution
 
 This project is intentionally built incrementally to mirror how real systems evolve over time.
+
+---
+
+## Delivery & Consistency Guarantees
+
+### Write Path
+
+- Documents are persisted to the `documents` table
+- A corresponding domain event is written to `outbox_events` in the same database transaction
+- **Guarantee**: No document is written without an event
+
+### Publishing
+
+- Events are marked `published_at` using `SELECT ... FOR UPDATE SKIP LOCKED`
+- This allows safe concurrent publishers without double-processing
+
+### Indexing
+
+The indexer consumes only events where:
+- `published_at IS NOT NULL`
+- `indexed_at IS NULL`
+
+After successful upsert into `search_documents`, the event is marked with `indexed_at`.
+
+**Guarantees**:
+- At-least-once delivery
+- Idempotent consumption
+- No lost updates
+- No infinite reprocessing
+
+### Search Strategy
+
+- **Primary search**: Postgres Full-Text Search (GIN + tsvector)
+  - Results ranked using `ts_rank`
+  - Snippets generated with `ts_headline`
+- **Fallback**: If FTS returns no results, trigram similarity search is executed
+- Results are deterministically ordered and paginated
+
+### Observability
+
+- Every request is assigned a unique `requestId`
+- Structured JSON logs include:
+  - `method`, `path`, `duration`
+  - `search` mode (`fts`/`trgm`)
+  - Result counts and query parameters
+- Errors include `requestId` for traceability
